@@ -17,39 +17,6 @@ class CameraExampleHome extends StatefulWidget {
   }
 }
 
-Future<String> upload(File imageFile) async {  
-      Map<String, dynamic> user;  
-      // open a bytestream
-      var stream = new http.ByteStream(DelegatingStream.typed(imageFile.openRead()));
-      // get file length
-      var length = await imageFile.length();
-
-      // string to uri
-      var uri = Uri.parse("http://18.215.237.81:5000/predict");
-
-      // create multipart request
-      var request = new http.MultipartRequest("POST", uri);
-
-      // multipart that takes file
-      var multipartFile = new http.MultipartFile('image', stream, length,
-          filename: basename(imageFile.path));
-
-      // add file to multipart
-      request.files.add(multipartFile);
-
-      // send
-      var response = await request.send();
-      print(response.statusCode);
-
-      // listen for response
-      response.stream.transform(utf8.decoder).listen((value) {
-        user = json.decode(value);
-        print('USER::::::::');
-        print(user['prediction']);
-        return user['prediction'];
-      });
-    }
-
 /// Returns a suitable camera icon for [direction].
 IconData getCameraLensIcon(CameraLensDirection direction) {
   switch (direction) {
@@ -68,7 +35,9 @@ void logError(String code, String message) =>
 
 class _CameraExampleHomeState extends State<CameraExampleHome> {
   CameraController controller;
+  bool pictureTaken = false;
   String imagePath;
+  String predictionResult;
   String videoPath;
   VoidCallback videoPlayerListener;
 
@@ -79,17 +48,16 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
-        title: const Text('Drushti : AI Vision'),
+        title: const Text('Drushti : AI Vision', textAlign: TextAlign.center),
+        backgroundColor: Colors.black,
+        centerTitle: true,
       ),
       body: Column(
         children: <Widget>[
           Expanded(
             child: Container(
-              child: Padding(
-                padding: const EdgeInsets.all(1.0),
-                child: Center(
+              child: Center(
                   child: _cameraPreviewWidget(),
-                ),
               ),
               /*
               decoration: BoxDecoration(
@@ -105,7 +73,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
           ),
           _captureControlRowWidget(),
           Padding(
-            padding: const EdgeInsets.all(5.0),
+            padding: const EdgeInsets.all(15.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.start,
               mainAxisSize: MainAxisSize.max,
@@ -130,33 +98,38 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
     );
   }
 
+  Widget getProperWidget(){
+    if(pictureTaken)
+      return new CircularProgressIndicator();
+    else
+      //showInSnackBar('Prediction Result: $predictionResult');
+      return new Text('$predictionResult', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black));
+  }
+
   /// Display the control bar with buttons to take pictures and record videos.
   Widget _captureControlRowWidget() {
+    bool pressed = false;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       mainAxisSize: MainAxisSize.max,
       children: <Widget>[
-        FlatButton(
-          onPressed: controller != null &&
+        RaisedButton(
+          color: pressed ? Colors.green : Colors.blue,
+          onPressed: () {
+                    setState(() {
+                      pressed = !pressed;
+                      pictureTaken = true;
+                    });
+                    if (controller != null &&
                   controller.value.isInitialized &&
-                  !controller.value.isRecordingVideo
-              ? onTakePictureButtonPressed
-              : null,
-          color: Colors.lightGreen,
-          padding: EdgeInsets.all(5.0),
-          child: Icon(Icons.camera_alt),
-        )
-        /*
-        IconButton(
-          text: const Text('Click here'),
-          icon: const Icon(Icons.camera_alt),
-          color: Colors.blue,
-          onPressed: controller != null &&
-                  controller.value.isInitialized &&
-                  !controller.value.isRecordingVideo
-              ? onTakePictureButtonPressed
-              : null,
-        ) */
+                  !controller.value.isRecordingVideo)
+                    onTakePictureButtonPressed();
+          },
+          shape: new RoundedRectangleBorder(borderRadius: new BorderRadius.circular(5.0)),
+          padding: EdgeInsets.all(15.0),
+          child: new Text("Get Prediction", style: TextStyle(color: Colors.white)),
+        ),
+        getProperWidget()
       ],
     );
   }
@@ -171,7 +144,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
       for (CameraDescription cameraDescription in cameras) {
         toggles.add(
           SizedBox(
-            width: 90.0,
+            width: 120.0,
             child: RadioListTile<CameraDescription>(
               title: Icon(getCameraLensIcon(cameraDescription.lensDirection)),
               groupValue: controller?.description,
@@ -225,12 +198,8 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
         setState(() {
           imagePath = filePath;
         });
-        // initiate file upload
-        upload(File(filePath)).then((String value) {
-          if (value != null) showInSnackBar(value);
-        });
-        //if (value != null) showInSnackBar(value);
         //if (filePath != null) showInSnackBar('Picture saved to $filePath');
+        upload(File(filePath));
       }
     });
   }
@@ -263,6 +232,42 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
     logError(e.code, e.description);
     showInSnackBar('Error: ${e.code}\n${e.description}');
   }
+
+  void upload(File imageFile) async {  
+      try{
+            // open a bytestream
+            var stream = new http.ByteStream(DelegatingStream.typed(imageFile.openRead()));
+            // get file length
+            var length = await imageFile.length();
+
+            // string to uri
+            var uri = Uri.parse("http://52.202.144.158:5000/predict");
+
+            // create multipart request
+            var request = new http.MultipartRequest("POST", uri);
+
+            // multipart that takes file
+            var multipartFile = new http.MultipartFile('image', stream, length,
+                filename: basename(imageFile.path));
+
+            // add file to multipart
+            request.files.add(multipartFile);
+
+            // send
+            var response = await request.send();
+            response.stream.transform(utf8.decoder).listen((value) {
+              var resultsOBj = Results.fromJson(json.decode(value));
+              setState(() {
+                pictureTaken = false;
+                predictionResult = resultsOBj.prediction.toString();
+              });
+            });
+
+      } on Exception catch (e){
+        logError(e.toString(),'error');
+        return null;
+      }
+    }
 }
 
 class CameraApp extends StatelessWidget {
@@ -287,10 +292,10 @@ Future<void> main() async {
 }
 
 class Results {
-  final String prediction;
-  final bool success;
-
-  Results({this.prediction, this.success});
+  String prediction;
+  bool success;
+  
+  Results({this.prediction='', this.success=false});
 
   factory Results.fromJson(Map<String, dynamic> json) {
     return Results(
