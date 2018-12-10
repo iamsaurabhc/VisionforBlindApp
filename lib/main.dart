@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-
 import 'package:path/path.dart';
 import 'package:async/async.dart';
 import 'package:http/http.dart' as http;
+import 'package:splashscreen/splashscreen.dart';
+import 'package:audioplayer/audioplayer.dart';
 
 class CameraExampleHome extends StatefulWidget {
   @override
@@ -40,12 +40,13 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
   String predictionResult;
   String videoPath;
   VoidCallback videoPlayerListener;
+  AudioPlayer audioPlugin = AudioPlayer();
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return new Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
         title: const Text('Drushti : AI Vision', textAlign: TextAlign.center),
@@ -57,7 +58,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
           Expanded(
             child: Container(
               child: Center(
-                  child: _cameraPreviewWidget(),
+                child: _cameraPreviewWidget(),
               ),
               /*
               decoration: BoxDecoration(
@@ -98,12 +99,14 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
     );
   }
 
-  Widget getProperWidget(){
-    if(pictureTaken)
+  Widget getProperWidget() {
+    if (pictureTaken)
       return new CircularProgressIndicator();
-    else
+    else {
       //showInSnackBar('Prediction Result: $predictionResult');
-      return new Text('$predictionResult', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black));
+      synthesizeText(predictionResult);
+      return new Text('$predictionResult');
+    }
   }
 
   /// Display the control bar with buttons to take pictures and record videos.
@@ -116,18 +119,20 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
         RaisedButton(
           color: pressed ? Colors.green : Colors.blue,
           onPressed: () {
-                    setState(() {
-                      pressed = !pressed;
-                      pictureTaken = true;
-                    });
-                    if (controller != null &&
-                  controller.value.isInitialized &&
-                  !controller.value.isRecordingVideo)
-                    onTakePictureButtonPressed();
+            setState(() {
+              pressed = !pressed;
+              pictureTaken = true;
+            });
+            if (controller != null &&
+                controller.value.isInitialized &&
+                !controller.value.isRecordingVideo)
+              onTakePictureButtonPressed();
           },
-          shape: new RoundedRectangleBorder(borderRadius: new BorderRadius.circular(5.0)),
+          shape: new RoundedRectangleBorder(
+              borderRadius: new BorderRadius.circular(5.0)),
           padding: EdgeInsets.all(15.0),
-          child: new Text("Get Prediction", style: TextStyle(color: Colors.white)),
+          child:
+              new Text("Get Prediction", style: TextStyle(color: Colors.white)),
         ),
         getProperWidget()
       ],
@@ -233,41 +238,54 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
     showInSnackBar('Error: ${e.code}\n${e.description}');
   }
 
-  void upload(File imageFile) async {  
-      try{
-            // open a bytestream
-            var stream = new http.ByteStream(DelegatingStream.typed(imageFile.openRead()));
-            // get file length
-            var length = await imageFile.length();
+  void upload(File imageFile) async {
+    try {
+      // open a bytestream
+      var stream =
+          new http.ByteStream(DelegatingStream.typed(imageFile.openRead()));
+      // get file length
+      var length = await imageFile.length();
 
-            // string to uri
-            var uri = Uri.parse("http://52.202.144.158:5000/predict");
+      // string to uri
+      var uri = Uri.parse("http://52.202.144.158:5000/predict");
 
-            // create multipart request
-            var request = new http.MultipartRequest("POST", uri);
+      // create multipart request
+      var request = new http.MultipartRequest("POST", uri);
 
-            // multipart that takes file
-            var multipartFile = new http.MultipartFile('image', stream, length,
-                filename: basename(imageFile.path));
+      // multipart that takes file
+      var multipartFile = new http.MultipartFile('image', stream, length,
+          filename: basename(imageFile.path));
 
-            // add file to multipart
-            request.files.add(multipartFile);
+      // add file to multipart
+      request.files.add(multipartFile);
 
-            // send
-            var response = await request.send();
-            response.stream.transform(utf8.decoder).listen((value) {
-              var resultsOBj = Results.fromJson(json.decode(value));
-              setState(() {
-                pictureTaken = false;
-                predictionResult = resultsOBj.prediction.toString();
-              });
-            });
-
-      } on Exception catch (e){
-        logError(e.toString(),'error');
-        return null;
-      }
+      // send
+      var response = await request.send();
+      response.stream.transform(utf8.decoder).listen((value) {
+        var resultsOBj = Results.fromJson(json.decode(value));
+        setState(() {
+          pictureTaken = false;
+          predictionResult = resultsOBj.prediction.toString();
+        });
+      });
+    } on Exception catch (e) {
+      logError(e.toString(), 'error');
+      return null;
     }
+  }
+
+  void synthesizeText(String text) async {
+    if (audioPlugin.state == AudioPlayerState.PLAYING) {
+      await audioPlugin.stop();
+    }
+    final String audioContent = await TextToSpeechAPI().synthesizeText(text);
+    if (audioContent == null) return;
+    final bytes = Base64Decoder().convert(audioContent, 0, audioContent.length);
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/wavenet.mp3');
+    await file.writeAsBytes(bytes);
+    await audioPlugin.play(file.path, isLocal: true);
+  }
 }
 
 class CameraApp extends StatelessWidget {
@@ -294,13 +312,75 @@ Future<void> main() async {
 class Results {
   String prediction;
   bool success;
-  
-  Results({this.prediction='', this.success=false});
+
+  Results({this.prediction = '', this.success = false});
 
   factory Results.fromJson(Map<String, dynamic> json) {
-    return Results(
-      prediction: json['prediction'],
-      success: json['success']
-    );
+    return Results(prediction: json['prediction'], success: json['success']);
+  }
+}
+
+class TextToSpeechAPI {
+  static final TextToSpeechAPI _singleton = TextToSpeechAPI._internal();
+  final _httpClient = HttpClient();
+  static const _apiKey = "AIzaSyB8Xe4EbMCHSAIAWGIEvijZC20NVrBZQio";
+  static const _apiURL = "texttospeech.googleapis.com";
+
+  factory TextToSpeechAPI() {
+    return _singleton;
+  }
+
+  TextToSpeechAPI._internal();
+
+  Future<dynamic> synthesizeText(String text) async {
+    try {
+      final uri = Uri.https(_apiURL, '/v1/text:synthesize');
+      final Map json = {
+        'input': {'text': text},
+        'voice': {'name': 'en-US-Wavenet-C', 'languageCode': 'en-US'},
+        'audioConfig': {'audioEncoding': 'MP3'}
+      };
+
+      final jsonResponse = await _postJson(uri, json);
+      if (jsonResponse == null) return null;
+      final String audioContent = await jsonResponse['audioContent'];
+      return audioContent;
+    } on Exception catch (e) {
+      print("$e");
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> _postJson(Uri uri, Map jsonMap) async {
+    try {
+      final httpRequest = await _httpClient.postUrl(uri);
+      final jsonData = utf8.encode(json.encode(jsonMap));
+      final jsonResponse =
+          await _processRequestIntoJsonResponse(httpRequest, jsonData);
+      return jsonResponse;
+    } on Exception catch (e) {
+      print("$e");
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> _processRequestIntoJsonResponse(
+      HttpClientRequest httpRequest, List<int> data) async {
+    try {
+      httpRequest.headers.add('X-Goog-Api-Key', _apiKey);
+      httpRequest.headers.add(HttpHeaders.CONTENT_TYPE, 'application/json');
+      if (data != null) {
+        httpRequest.add(data);
+      }
+      final httpResponse = await httpRequest.close();
+      if (httpResponse.statusCode != HttpStatus.OK) {
+        throw Exception('Bad Response');
+      }
+      final responseBody = await httpResponse.transform(utf8.decoder).join();
+      return json.decode(responseBody);
+    } on Exception catch (e) {
+      print("$e");
+      return null;
+    }
   }
 }
