@@ -247,7 +247,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
       var length = await imageFile.length();
 
       // string to uri
-      var uri = Uri.parse("http://52.202.144.158:5000/predict");
+      var uri = Uri.parse("http://35.175.209.68:5000/predict");
 
       // create multipart request
       var request = new http.MultipartRequest("POST", uri);
